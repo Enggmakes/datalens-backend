@@ -9,6 +9,7 @@ from typing import Optional
 from scipy import stats
 from sklearn.preprocessing import LabelEncoder
 import warnings
+import google.generativeai as genai
 warnings.filterwarnings('ignore')
 
 app = FastAPI(title="DataLens Analytics API", version="1.0.0")
@@ -391,6 +392,46 @@ async def custom_chart(payload: dict):
         data = prepare_chart_data(df, chart_type, x_col, y_col, col_types, bins)
 
     return {"data": data, "x_col": x_col, "y_col": y_col, "chart_type": chart_type}
+
+@app.post("/api/chat")
+async def chat_with_data(payload: dict):
+    """Chat with the data using Gemini AI."""
+    session_id = payload.get("session_id")
+    message = payload.get("message")
+    api_key = payload.get("api_key")
+
+    if not session_id or session_id not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    if not message:
+        raise HTTPException(status_code=400, detail="Message is required.")
+    if not api_key:
+        raise HTTPException(status_code=400, detail="Gemini API Key is required.")
+
+    try:
+        session = sessions[session_id]
+        df = session["df"]
+        col_types = session["col_types"]
+        
+        genai.configure(api_key=api_key)
+        # We use gemini-1.5-flash as it's fast and standard
+        model = genai.GenerativeModel('gemini-1.5-flash')
+
+        # Prepare context (we include schema and preview to help the AI)
+        context = "You are a helpful data analyst AI. You are assisting a user with their uploaded dataset.\n"
+        context += f"The dataset has {len(df)} rows and {len(df.columns)} columns.\n"
+        context += f"Columns and Data Types:\n"
+        for c, t in col_types.items():
+            context += f"- {c} ({t})\n"
+            
+        preview_data = df.head(5).to_csv(index=False)
+        context += f"\nHere is a preview of the first 5 rows (CSV format):\n{preview_data}\n"
+        
+        prompt = f"{context}\n\nUser Question: {message}\n\nPlease provide a clear, concise, and insightful answer. Format your answer in Markdown if it includes lists or code. Do not hallucinate exact answers if you need to run calculations across the entire dataset (which you can't do), instead guide the user."
+
+        response = model.generate_content(prompt)
+        return {"response": response.text}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/health")
 async def health():

@@ -7,3 +7,4 @@ xlrd
 scipy
 scikit-learn
 python-multipart
+google-generativeai==0.8.6
