@@ -1,6 +1,6 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 import pandas as pd
 import numpy as np
 import io
@@ -503,6 +503,21 @@ async def clean_data(payload: dict):
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to clean data: {str(e)}")
+
+@app.get("/api/download")
+async def download_data(session_id: str):
+    """Download the current state of the dataset as CSV."""
+    if session_id not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found.")
+        
+    df = sessions[session_id]["df"]
+    csv_data = df.to_csv(index=False)
+    
+    return Response(
+        content=csv_data,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=datalens_export.csv"}
+    )
 
 @app.get("/api/health")
 async def health():
