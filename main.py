@@ -433,6 +433,77 @@ async def chat_with_data(payload: dict):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/clean-data")
+async def clean_data(payload: dict):
+    session_id = payload.get("session_id")
+    operations = payload.get("operations", [])
+    
+    if session_id not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found.")
+        
+    session = sessions[session_id]
+    df = session["df"].copy()
+    
+    try:
+        for op in operations:
+            action = op.get("action")
+            if action == "drop_column":
+                col = op.get("column")
+                if col in df.columns:
+                    df = df.drop(columns=[col])
+            elif action == "rename_column":
+                old_name = op.get("old_name")
+                new_name = op.get("new_name")
+                if old_name in df.columns and new_name:
+                    df = df.rename(columns={old_name: new_name})
+            elif action == "fill_missing":
+                col = op.get("column")
+                method = op.get("method")
+                if col in df.columns:
+                    if method == "mean" and pd.api.types.is_numeric_dtype(df[col]):
+                        df[col] = df[col].fillna(df[col].mean())
+                    elif method == "median" and pd.api.types.is_numeric_dtype(df[col]):
+                        df[col] = df[col].fillna(df[col].median())
+                    elif method == "mode":
+                        if not df[col].mode().empty:
+                            df[col] = df[col].fillna(df[col].mode()[0])
+                    elif method == "zero":
+                        df[col] = df[col].fillna(0)
+            elif action == "drop_missing":
+                col = op.get("column")
+                if col == "All":
+                    df = df.dropna()
+                elif col in df.columns:
+                    df = df.dropna(subset=[col])
+                    
+        # Re-run all analysis with the new df
+        col_types = {col: detect_column_type(df[col]) for col in df.columns}
+        statistics = compute_statistics(df, col_types)
+        chart_suggestions = suggest_charts(col_types, df)
+        correlations = compute_correlations(df, col_types)
+        domain = detect_domain(df)
+        
+        # Save back to session
+        sessions[session_id] = {"df": df, "col_types": col_types}
+        
+        preview = df.head(20).replace({np.nan: None}).to_dict(orient="records")
+        preview = [{k: safe_json(v) for k, v in row.items()} for row in preview]
+
+        return {
+            "session_id": session_id,
+            "filename": "Cleaned Dataset",
+            "rows": len(df),
+            "columns": list(df.columns),
+            "col_types": col_types,
+            "statistics": statistics,
+            "chart_suggestions": chart_suggestions,
+            "correlations": correlations,
+            "domain": domain,
+            "preview": preview,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to clean data: {str(e)}")
+
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "version": "1.0.0"}
