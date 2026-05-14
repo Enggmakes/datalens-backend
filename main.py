@@ -414,7 +414,7 @@ async def chat_with_data(payload: dict):
         
         genai.configure(api_key=api_key)
         # We use gemini-1.5-flash as it's fast and standard
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-2.5-flash')
 
         # Prepare context (we include schema and preview to help the AI)
         context = "You are a helpful data analyst AI. You are assisting a user with their uploaded dataset.\n"
